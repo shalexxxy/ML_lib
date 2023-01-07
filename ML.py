@@ -69,8 +69,9 @@ class ClassificationTree:
                     min_val = j
 
         current_node.right = Node()
-
+        current_node.left = Node()
         current_node.right.depth = current_node.depth + 1
+        current_node.left.depth = current_node.depth + 1
         current_node.left.mass = data[data[min_col] < min_val]
         current_node.right.mass = data[data[min_col] >= min_val]
         current_node.feature_num = min_col
@@ -96,15 +97,16 @@ class ClassificationTree:
         res = []
         for i in x.index:
             current_node = self.root
-            while current_node.feature_num is not None:
-                print(x.loc[i, current_node.feature_num])
-                if x.loc[i, current_node.feature_num] <  current_node.split_val and current_node.left is not None:
-                    current_node = current_node.left
-                elif x.loc[i, current_node.feature_num] >= current_node.split_val and current_node.right is not None:
-                    current_node = current_node.right
-                elif current_node.right is None or current_node.left is None:
+            while current_node is not None:
+                if current_node.right is None or current_node.left is None:
                     mass = current_node.mass['labels']
                     current_node = None
-            res.append(mass.groupby('labels').size().idxmax())
-            return res
+                else:
+                    if x.loc[i, current_node.feature_num] < current_node.split_val and current_node.left is not None:
+                        current_node = current_node.left
+                    elif x.loc[i, current_node.feature_num] >= current_node.split_val and current_node.right is not None:
+                        current_node = current_node.right
+
+            res.append(mass.value_counts().idxmax())
+        return res
 
