@@ -49,12 +49,16 @@ class Node:
         self.left = None
         self.right = None
         self.mass = None # mass of target values in the node
+        self.cols = []
+        self.vals = []
+        self.directions = []
 
 
 class ClassificationTree:
     def __init__(self):
         self.root = Node()
         self.root.depth = 1
+        self.lists = []
 
 # Recursive func for split
     def split_current(self, data, current_node, min_elems, max_depth):
@@ -86,6 +90,60 @@ class ClassificationTree:
             self.split_current(current_node.right.mass, current_node.right, min_elems, max_depth)
         if (current_node.left.mass.shape[0] > min_elems) and (current_node.left.mass['labels'].nunique() > 1) and (current_node.left.depth < max_depth):
             self.split_current(current_node.left.mass, current_node.left, min_elems, max_depth)
+
+
+    def calc_conds(self, current_node, current_cols, current_vals, direction):
+        current_node.cols = current_cols.copy()
+        current_node.vals = current_vals.copy()
+        current_node.directions = direction.copy()
+        if current_node.left is not None:
+            lft_c = current_cols.copy()
+            lft_c.append(current_node.feature_num)
+            lft_v = current_vals.copy()
+            lft_v.append(current_node.split_val)
+            lft_d = direction.copy()
+            lft_d.append('<')
+            self.calc_conds(current_node.left,
+                                lft_c,
+                                lft_v,
+                                lft_d
+                                )
+        if current_node.right is not None:
+            rgt_c = current_cols.copy()
+            rgt_c.append(current_node.feature_num)
+            rgt_v = current_vals.copy()
+            rgt_v.append(current_node.split_val)
+            rgt_d = direction.copy()
+            rgt_d.append('>=')
+            self.calc_conds(current_node.right,
+                                rgt_c,
+                                rgt_v,
+                                rgt_d
+                                )
+        if (current_node.right is None) and (current_node.left is None):
+            current_node.prediction = current_node.mass['labels'].value_counts().idxmax()
+            self.lists.append(current_node)
+
+    def fast_predict(self, x):
+        x = pd.DataFrame(x)
+        x = x.reset_index()
+        res = []
+        parts = []
+        for i in self.lists:
+            part = x
+            for j in range(len(i.cols)):
+                if i.directions[j] == '<':
+                    part = part[part[i.cols[j]] < i.vals[j]]
+                else:
+                    part = part[part[i.cols[j]] >= i.vals[j]]
+            parts.append(part)
+            res += [i.prediction for _ in range(part.shape[0])]
+        final = pd.concat(parts, ignore_index=True)
+        final['target'] = res
+        final = final.sort_values(by = 'index',ascending=True)
+        return list(final['target'])
+
+
     # fit func
     def fit(self, x_train, y_train, min_leaf_elems = 10, max_depth = 10):
         data = pd.DataFrame(x_train)
@@ -94,6 +152,7 @@ class ClassificationTree:
         current_node = self.root
         current_node.mass = data
         self.split_current(current_node.mass, current_node, min_leaf_elems, max_depth)
+        self.calc_conds(self.root, [], [], [])
 
     def predict(self, x):
         x = pd.DataFrame(x)
@@ -120,6 +179,7 @@ class RegressionTree:
     def __init__(self):
         self.root = Node()
         self.root.depth = 1
+        self.lists = []
 
 
     def split_current(self, data, current_node, min_elems, max_depth):
@@ -136,7 +196,6 @@ class RegressionTree:
                     min_rss = rss
                     min_col = i
                     min_val = j
-
         current_node.right = Node()
         current_node.left = Node()
         current_node.right.depth = current_node.depth + 1
@@ -145,12 +204,11 @@ class RegressionTree:
         current_node.right.mass = data[data[min_col] >= min_val]
         current_node.feature_num = min_col
         current_node.split_val = min_val
-        #print('Current depth',  current_node.right.depth)
-        #print('Current split ', min_rss)
-        #print(min_col, min_val)
-        if (current_node.right.mass.shape[0] > min_elems) and (current_node.right.mass['target'].nunique() > 1) and (current_node.right.depth < max_depth):
+        if (current_node.right.mass.shape[0] > min_elems) and (current_node.right.mass['target'].nunique() > 1) \
+                and (current_node.right.depth < max_depth):
             self.split_current(current_node.right.mass, current_node.right, min_elems, max_depth)
-        if (current_node.left.mass.shape[0] > min_elems) and (current_node.left.mass['target'].nunique() > 1) and (current_node.left.depth < max_depth):
+        if (current_node.left.mass.shape[0] > min_elems) and (current_node.left.mass['target'].nunique() > 1) \
+                and (current_node.left.depth < max_depth):
             self.split_current(current_node.left.mass, current_node.left, min_elems, max_depth)
 
     def fit(self, x_train, y_train, min_leaf_elems = 10, max_depth = 10):
@@ -160,6 +218,58 @@ class RegressionTree:
         current_node = self.root
         current_node.mass = data
         self.split_current(current_node.mass, current_node, min_leaf_elems, max_depth)
+        self.calc_conds(self.root, [], [], [])
+# Gathering conditions for fast prediction
+    def calc_conds(self, current_node, current_cols, current_vals, direction):
+        current_node.cols = current_cols.copy()
+        current_node.vals = current_vals.copy()
+        current_node.directions = direction.copy()
+        if current_node.left is not None:
+            lft_c = current_cols.copy()
+            lft_c.append(current_node.feature_num)
+            lft_v = current_vals.copy()
+            lft_v.append(current_node.split_val)
+            lft_d = direction.copy()
+            lft_d.append('<')
+            self.calc_conds(current_node.left,
+                                lft_c,
+                                lft_v,
+                                lft_d
+                                )
+        if current_node.right is not None:
+            rgt_c = current_cols.copy()
+            rgt_c.append(current_node.feature_num)
+            rgt_v = current_vals.copy()
+            rgt_v.append(current_node.split_val)
+            rgt_d = direction.copy()
+            rgt_d.append('>=')
+            self.calc_conds(current_node.right,
+                                rgt_c,
+                                rgt_v,
+                                rgt_d
+                                )
+        if (current_node.right is None) and (current_node.left is None):
+            current_node.prediction = np.mean(current_node.mass['target'])
+            self.lists.append(current_node)
+
+    def fast_predict(self, x):
+        x = pd.DataFrame(x)
+        x = x.reset_index()
+        res = []
+        parts = []
+        for i in self.lists:
+            part = x
+            for j in range(len(i.cols)):
+                if i.directions[j] == '<':
+                    part = part[part[i.cols[j]] < i.vals[j]]
+                else:
+                    part = part[part[i.cols[j]] >= i.vals[j]]
+            parts.append(part)
+            res += [i.prediction for _ in range(part.shape[0])]
+        final = pd.concat(parts, ignore_index=True)
+        final['target'] = res
+        final = final.sort_values(by = 'index',ascending=True)
+        return list(final['target'])
 
     def predict(self, x):
         x = pd.DataFrame(x)
@@ -233,14 +343,19 @@ class RandomClassificationForest:
         x = pd.DataFrame(x)
         for i in range(len(self.forest)):
             self.predictions.append(np.array (self.forest[i].predict(x[list(self.parms[i]) ])))
-            print(i, ' predicted')
         self.predictions  = pd.DataFrame(self.predictions).T
         res = []
-        print(self.predictions)
         for i in list(self.predictions.index):
             val = self.predictions.loc[i, :].value_counts().idxmax()
             res.append(val)
-            print(val)
-        print(res)
         return res
+
+class GBM:
+    def __init__(self, max_depth=5, min_leaf_elems=10, num_iter = 5):
+        self.max_depth = max_depth
+        self.min_leaf_elems = min_leaf_elems
+        self.num_trees = num_iter
+        self.forest = [ClassificationTree() for _ in range(num_iter)]
+
+
 
